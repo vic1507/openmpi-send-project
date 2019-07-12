@@ -2,15 +2,17 @@
 #include <mpi.h>
 #include <stdlib.h>
 #include <math.h>
+#include <allegro5/allegro.h>
 
 void update (int, int*, int, int, int*);
 
 //row/col 9 = 9 procs
 //row/col 6 = 4 procs
 //row/col 12 = 16 procs
+//row/col 33 = 121 procs
 
-#define ROW 9
-#define COL 9
+#define ROW 12
+#define COL 12
 #define UP 0
 #define DOWN 1
 #define LEFT 2
@@ -23,19 +25,20 @@ int main(int argv, char** argc)
     int localRow = 3;
     int localCol = 3;
     int localSum = 0;    
-    int rank, dims[2] = {dimension, dimension}, nbrs[4], periods  [2] = {0, 0}, reorder = 0;
-    int* inbuf = (int*)malloc(sizeof(int)* 12);
-    int* outbuf = (int*)malloc(sizeof(int)* 12);
+    int nbrsSize = 3;
+    int rank, dims[2] = {dimension, dimension}, nbrs[nbrsSize+1], periods  [2] = {0, 0}, reorder = 0;
+    int* inbuf = (int*)malloc(sizeof(int)* nbrsSize*4);
+    int* outbuf = (int*)malloc(sizeof(int)* nbrsSize*4);
     int* sendToMaster = (int*)malloc(sizeof(int)* (localRow*localCol+1));
     int* world = (int*)malloc(sizeof(int)* ROW * COL);
-    int centerProcess = dimension * dimension / 2;    
+    int centerProcess = ROW % 2 == 0 ? dimension * dimension / 2 + ROW / 6 : dimension * dimension / 2 ;    
     int* localMatrix = (int*) malloc (sizeof(int)* localRow * localCol);
     MPI_Comm greed;
     MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, reorder, &greed);
     MPI_Comm_rank(greed, &rank);
     MPI_Cart_shift(greed, 0, 1, &nbrs[UP], &nbrs[DOWN]);
     MPI_Cart_shift(greed, 1, 1, &nbrs[LEFT], &nbrs[RIGHT]);
-    int centerCell = ROW % 2 == 1 ? ROW * COL / 2 : ROW * COL / 2 + (ROW / 2);
+    int centerCell = ROW % 2 == 1 ? 4 : 0;
     int decompositionRow = ROW/3;
     int decompositionCol = ROW/3;
     MPI_Request reqs[4];
@@ -52,8 +55,28 @@ int main(int argv, char** argc)
         for (int i = 0; i< ROW * COL; i++)
             world [i] = 0;
 
-    }
+//DISPLAY ALLEGRO
+/*
+        ALLEGRO_DISPLAY *display = NULL;
+
+   if(!al_init()) {
+      fprintf(stderr, "failed to initialize allegro!\n");
+      return -1;
+   }
+
+   display = al_create_display(640, 480);
+   if(!display) {
+      fprintf(stderr, "failed to create display!\n");
+      return -1;
+   }
+
+   al_clear_to_color(al_map_rgb(0,0,0));
+   
+   al_flip_display();
     
+    
+    */
+    }    
     for (int i = 0; i <localRow * localCol; i++)
     {
         inbuf [i] = 0;
@@ -103,51 +126,23 @@ int main(int argv, char** argc)
     //needed to synchronized the prints
     MPI_Barrier(greed);
     
-    for(int u = 0; u<20; u  ++){
+    for(int u = 0; u<150; u  ++){
       
-
-    //TODO MASTER N.B. Master is a worker too
+    //MASTER
     if (rank == centerProcess){
 
          //value of centerCell ++; localMatrix[4]++;
-           localMatrix[4]++;
+         localMatrix[centerCell]++;
         //update recursive function
-        for (int i = 0; i<9; i++) 
+        for (int i = 0; i<localRow*localCol; i++) 
             if (localMatrix[i] > 3)
-                update(i, localMatrix, 1, 1, outbuf);
+                update(i, localMatrix, 1, 1, outbuf);        
 
-        
-        /*
-        //construct the outbuf array
-        int localMatrixIndex = 0;
-        for (int i = 0; i< 3; i++){ 
-                outbuf[i] = localMatrix[localMatrixIndex];
-                localMatrixIndex++;
-        }
-
-        localMatrixIndex = 6;
-        for (int i = 3; i<6; i++){
-            outbuf[i] = localMatrix[localMatrixIndex];            
-            localMatrixIndex++;        
-        }
-
-        localMatrixIndex = 0;
-        for (int i = 6; i<9; i++){
-            outbuf[i] = localMatrix[localMatrixIndex];            
-            localMatrixIndex+=3;        
-        }
-        
-        localMatrixIndex = 2;
-        for (int i = 9; i<12; i++){
-            outbuf[i] = localMatrix[localMatrixIndex];            
-            localMatrixIndex+=3;        
-        }
-        */
         //send my state to nbrs
-        for (int i = 0; i<12; i+=3)
+        for (int i = 0; i<nbrsSize*4; i+=3)
             MPI_Isend(&outbuf[i], 3, MPI_INT, nbrs[((i+3) /3)-1],1, greed, &reqs[((i+3) /3)-1]);
         
-        for (int i = 0; i<12;i++)
+        for (int i = 0; i<nbrsSize*4;i++)
             outbuf[i] = 0;
 
         // //receive nbrs states 
@@ -155,6 +150,9 @@ int main(int argv, char** argc)
             MPI_Recv(&inbuf[i],3, MPI_INT, nbrs[((i+3) /3)-1], 1, greed, &status);
 
     
+        for (int i = 0; i<nbrsSize+1; i++)
+            MPI_Wait (&reqs[i], &status);
+
         //prepare next iteration and send 
         //corrispondenze:
         //UP localMatrix [i] <-> inbuf [i] ; 0-3  ++1        
@@ -183,16 +181,23 @@ int main(int argv, char** argc)
         }
 
         shiftCoefficient = 0;
-
-         
+        
+        int printOk = 1;
+        for (int i = 0; i<ROW*COL; i++)
+            if (world[i] > 3)
+                printOk = 0;
+        
+             
         //if no messagge is flying print the world WORK IN PROGRESS  /TODO CHECK IF NEEDED, MAYBE NOT 
+        if (printOk == 1){        
         printf ("giro %d\n", u);
         for (int i = 0; i< ROW; i++){
             for (int j = 0; j<COL; j++){
                     printf ("%d  ", world[i*COL+j]);} printf ("\n");
         }
         printf ("\n");
-       
+       }
+
             
     }
 
@@ -201,46 +206,22 @@ int main(int argv, char** argc)
     
        // localMatrix[4]++;
         //update recursive function
-        for (int i = 0; i<9; i++) 
+          for (int i = 0; i<9; i++) 
             if (localMatrix[i] > 3)
-                update(i, localMatrix, 1, 1, outbuf);
+                update(i, localMatrix, 1, 1, outbuf);        
 
-        //send message
-        //construct the outbuf array
-        /*int localMatrixIndex = 0;
-        for (int i = 0; i< 3; i++){ 
-                outbuf[i] = localMatrix[localMatrixIndex];
-                localMatrixIndex++;
-        }
-
-        localMatrixIndex = 6;
-        for (int i = 3; i<6; i++){
-            outbuf[i] = localMatrix[localMatrixIndex];            
-            localMatrixIndex++;        
-        }
-
-        localMatrixIndex = 0;
-        for (int i = 6; i<9; i++){
-            outbuf[i] = localMatrix[localMatrixIndex];            
-            localMatrixIndex+=3;        
-        }
-        
-        localMatrixIndex = 2;
-        for (int i = 9; i<12; i++){
-            outbuf[i] = localMatrix[localMatrixIndex];            
-            localMatrixIndex+=3;        
-        }
-        */
         //send my state to nbrs
-        for (int i = 0; i<12; i+=3)
+        for (int i = 0; i<nbrsSize*4; i+=3)
             MPI_Isend(&outbuf[i], 3, MPI_INT, nbrs[((i+3) /3)-1],1, greed, &reqs[((i+3) /3)-1]);
         
-        for (int i = 0; i<12;i++)
+        for (int i = 0; i<nbrsSize*4;i++)
             outbuf[i] = 0;
         //receive
-        for (int i = 0; i<12;i+=3)
+        for (int i = 0; i<nbrsSize*4;i+=3)
             MPI_Recv(&inbuf[i],3, MPI_INT, nbrs[((i+3) /3)-1], 1, greed, &status);
         
+        for (int i = 0; i<4; i++)
+            MPI_Wait (&reqs[i], &status);
         //corrispondenze:
         //UP localMatrix [i] <-> inbuf [i] ; 0-3  ++1        
         for (int i = 0; i<3; i++) 
@@ -270,7 +251,7 @@ int main(int argv, char** argc)
         shiftCoefficient = 0;
 
         //prepareNextSend
-            
+
     
         }
 
