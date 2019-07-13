@@ -14,8 +14,8 @@ void update (int, int*, int, int, int*, int, int, int);
 //row/col 24 = 64 procs
 //row/col 54 = 324 procs //TOO MUCH! NEED BIGGER DECOMPOSITION!
 
-#define ROW 54
-#define COL 54
+#define ROW 6
+#define COL 6
 #define UP 0
 #define DOWN 1
 #define LEFT 2
@@ -25,8 +25,8 @@ int main(int argc, char** argv)
     MPI_Init(&argc, &argv);
     int numProcs;
     MPI_Comm_size (MPI_COMM_WORLD, &numProcs);
-    int localRow = 18;
-    int localCol = 18;
+    int localRow = 3;
+    int localCol = 3;
     int dimension = sqrt (COL * ROW / (localRow * localCol)); 
     int localSum = 0;    
     int nbrsSize  = localRow;
@@ -37,7 +37,7 @@ int main(int argc, char** argv)
     int* world = (int*)malloc(sizeof(int)* ROW * COL);
     
     //TODO DEFINIRE IL PROCESSO CENTRALE
-    int centerProcess = 4 /*ROW % 2 == 0 ? dimension * dimension / 2 + ROW / 6 : dimension * dimension / 2 ;*/;    
+    int centerProcess = numProcs/2 + 1;  
     
     int* localMatrix = (int*) malloc (sizeof(int)* localRow * localCol);
     MPI_Comm greed;
@@ -47,7 +47,7 @@ int main(int argc, char** argv)
     MPI_Cart_shift(greed, 1, 1, &nbrs[LEFT], &nbrs[RIGHT]);
         
     //TODO DEFINIRE LA CELLA CENTRALE    
-    int centerCell = ROW % 2 == 1 ? 4 : 0;
+    int centerCell = 0;
 
     int decompositionRow = ROW/localRow;
     int decompositionCol = COL/localCol;
@@ -137,7 +137,7 @@ int main(int argc, char** argv)
     //needed to synchronized the prints
     MPI_Barrier(greed);
     
-    for(int u = 0; u<20; u  ++){
+    for(int u = 0; u<40; u  ++){
       
     //MASTER
     if (rank == centerProcess){
@@ -176,7 +176,7 @@ int main(int argc, char** argv)
 
     
         //LEFT localMatrix [i] <-> inbuf [i+nbrsLeftShift-shiftCoefficient] ; 0-9 ++3; x=6, y=0 ++2
-        for (int i = 0; i< sendSize*3; i+=sendSize)
+        for (int i = 0; i< localRow * localCol - localRow; i+=sendSize)
         {
             localMatrix[i]+= inbuf[i+nbrsLeftShift - shiftCoefficient];        
             shiftCoefficient+= localRow -1 ;
@@ -185,7 +185,7 @@ int main(int argc, char** argv)
         shiftCoefficient = 0;
              
         //RIGHT localMatrix [i] <-> inbuf [i+nbrsRightShift-shiftCoefficient] ; 2-9 ++3; x=7, y=0 ++2
-        for (int i = localRow-1; i<sendSize*3; i+=sendSize)
+        for (int i = localRow-1; i<localRow * localCol; i+=sendSize)
         {
             localMatrix[i]+= inbuf[i+nbrsRightShift - shiftCoefficient];
             shiftCoefficient+= localRow - 1;        
@@ -197,10 +197,9 @@ int main(int argc, char** argv)
         for (int i = 0; i<ROW*COL; i++)
             if (world[i] > 3)
                 printOk = 0;
-        
-             
-        //if no messagge is flying print the world WORK IN PROGRESS  /TODO CHECK IF NEEDED, MAYBE NOT 
-        if (printOk == 1){        
+            
+    
+         if (printOk == 1){        
         printf ("giro %d\n", u);
         for (int i = 0; i< ROW; i++){
             for (int j = 0; j<COL; j++){
@@ -209,8 +208,7 @@ int main(int argc, char** argv)
         printf ("\n");
        }
 
-            
-    }
+}
 
     //local operations 
     if (rank != centerProcess){
@@ -245,7 +243,7 @@ int main(int argc, char** argv)
 
     
         //LEFT localMatrix [i] <-> inbuf [i+nbrsLeftShift-shiftCoefficient] ; 0-9 ++3; x=6, y=0 ++2
-        for (int i = 0; i< sendSize*3; i+=sendSize)
+        for (int i = 0; i< localRow * localCol - localRow; i+=sendSize)
         {
             localMatrix[i]+= inbuf[i+nbrsLeftShift - shiftCoefficient];        
             shiftCoefficient+= localRow -1 ;
@@ -254,7 +252,7 @@ int main(int argc, char** argv)
         shiftCoefficient = 0;
              
         //RIGHT localMatrix [i] <-> inbuf [i+nbrsRightShift-shiftCoefficient] ; 2-9 ++3; x=7, y=0 ++2
-        for (int i = localRow-1; i<sendSize*3; i+=sendSize)
+        for (int i = localRow-1; i<localRow * localCol; i+=sendSize)
         {
             localMatrix[i]+= inbuf[i+nbrsRightShift - shiftCoefficient];
             shiftCoefficient+=localRow - 1;        
@@ -262,42 +260,12 @@ int main(int argc, char** argv)
 
           shiftCoefficient = 0;
 
-/*
-
-
-
-        //UP localMatrix [i] <-> inbuf [i] ; 0-3  ++1        
-        for (int i = 0; i<3; i++) 
-            localMatrix[i]+=inbuf[i];
-        
-        //DOWN localMatrix [i] <-> inbuf [i-3] ; 6-9  ++1
-        for (int i =6; i< 9; i++)
-            localMatrix[i]+=inbuf[i-3];
-
-    
-        //LEFT localMatrix [i] <-> inbuf [i+nbrsLeftShift-shiftCoefficient] ; 0-9 ++3; x=6, y=0 ++2
-        for (int i = 0; i< 9; i=i+3)
-        {
-            localMatrix[i]+= inbuf[i+nbrsLeftShift - shiftCoefficient];        
-            shiftCoefficient+=2 ;
-        }
-        
-        shiftCoefficient = 0;
-             
-        //RIGHT localMatrix [i] <-> inbuf [i+nbrsRightShift-shiftCoefficient] ; 2-9 ++3; x=7, y=0 ++2
-        for (int i = 2; i<9; i= i+3)
-        {
-            localMatrix[i]+= inbuf[i+nbrsRightShift - shiftCoefficient];
-            shiftCoefficient+=2;        
-        }
-*/
-      
         //prepareNextSend
 
     
         }
 
-       //sendToMaster the actual state + sum where sum is the next send (maybe gather) //TODO IL SUM
+       //sendToMaster the actual state + sum where sum is the next send (maybe gather) 
        MPI_Gatherv(localMatrix, localRow * localCol, MPI_INT, world, counts, disps, matrixTransposed, centerProcess, MPI_COMM_WORLD);   
 
     }
@@ -353,14 +321,14 @@ void update (int cell, int* localMatrix, int updateNum, int center, int* outbuf,
             }
             sendUp = 1;
             if (cell < sizeRow * sizeCol && cell>= sizeRow*sizeCol-sizeRow)
-            outbuf[cell-sizeRow]+=1; 
+             outbuf[cell-  (sizeRow * (sizeRow -2)) ]+=1; 
             update (cell-sizeCol, localMatrix, 1, 0, outbuf, sizeCol, sizeRow, lap);
         }
 
         if (cell % sizeCol == 0 || (cell > 0 && cell< sizeRow-1) || (cell<sizeRow*sizeCol-1 && cell> sizeRow*sizeCol-sizeRow))
         {
             if (cell%sizeCol == 0)
-               outbuf[sizeRow*2 + (cell/sizeCol)]+=1;
+                outbuf[sizeRow*2 + (cell/sizeCol)]+=1;
 
             if (lap == 15 || lap == 16)
             {
@@ -402,80 +370,4 @@ void update (int cell, int* localMatrix, int updateNum, int center, int* outbuf,
     }
 }
 
-/*WORKING VERSION
-void update (int cell, int* localMatrix, int updateNum, int center, int* outbuf)
-{
-
-    
-    if (localMatrix[cell] <3)
-        localMatrix[cell] += updateNum;
-
-    else
-    {
-        localMatrix[cell] = 0;
-        if (cell == 0){
-            outbuf[0]+=1;
-            outbuf[6]+=1;
-            update(1, localMatrix, 1, 0, outbuf);
-            update(3, localMatrix, 1, 0, outbuf);
-        }
-        
-        if (cell == 1){
-            outbuf[1]+=1;
-            update(0, localMatrix, 1, 0, outbuf);
-            update(2, localMatrix, 1, 0, outbuf);
-            update(4, localMatrix, 1, 0, outbuf);        
-            }   
-
-        if (cell == 2){
-            outbuf[2]+=1;
-            outbuf[9]+=1;
-            update(1, localMatrix, 1, 0, outbuf);
-            update(5, localMatrix, 1, 0, outbuf);  
-          }   
-    
-        if (cell == 3){
-            outbuf[7]+=1;
-            update(0, localMatrix, 1, 0, outbuf);
-            update(4, localMatrix, 1, 0, outbuf);
-            update(6, localMatrix, 1, 0, outbuf);        
-        }
-        
-        if (cell == 4){
-            update(1, localMatrix, 1, 0, outbuf);
-            update(3, localMatrix, 1, 0, outbuf);
-            update(5, localMatrix, 1, 0, outbuf);
-            update(7, localMatrix, 1, 0, outbuf);        
-        }
-    
-        if (cell == 5){
-            outbuf[10]+=1;
-            update(2, localMatrix, 1, 0, outbuf);
-            update(4, localMatrix, 1, 0, outbuf);
-            update(8, localMatrix, 1, 0, outbuf);
-        }
-    
-        if (cell == 6){
-            outbuf[3]+=1;
-            outbuf[8]+=1;
-            update(3, localMatrix, 1, 0, outbuf);
-            update(7, localMatrix, 1, 0, outbuf);
-        }
- 
-        if (cell == 7){
-            outbuf[4]+=1;
-            update(4, localMatrix, 1, 0, outbuf);
-            update(6, localMatrix, 1, 0, outbuf);
-            update(8, localMatrix, 1, 0, outbuf);
-        }
-
-        if (cell == 8){
-        outbuf[5]+=1;
-        outbuf[11]+=1;
-        update(5, localMatrix, 1, 0, outbuf);
-        update(7, localMatrix, 1, 0, outbuf);
-         }              
-    }
-}
-*/
 
