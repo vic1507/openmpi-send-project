@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <allegro5/allegro.h>
+#include <allegro5/allegro_primitives.h>
 
 void update (int, int*, int, int, int*, int, int, int);
 //void update (int, int*, int, int, int*);
@@ -14,8 +15,8 @@ void update (int, int*, int, int, int*, int, int, int);
 //row/col 24 = 64 procs
 //row/col 54 = 324 procs //TOO MUCH! NEED BIGGER DECOMPOSITION!
 
-#define ROW 6
-#define COL 6
+#define ROW 54
+#define COL 54
 #define UP 0
 #define DOWN 1
 #define LEFT 2
@@ -25,8 +26,8 @@ int main(int argc, char** argv)
     MPI_Init(&argc, &argv);
     int numProcs;
     MPI_Comm_size (MPI_COMM_WORLD, &numProcs);
-    int localRow = 3;
-    int localCol = 3;
+    int localRow = 27;
+    int localCol = 27;
     int dimension = sqrt (COL * ROW / (localRow * localCol)); 
     int localSum = 0;    
     int nbrsSize  = localRow;
@@ -37,7 +38,7 @@ int main(int argc, char** argv)
     int* world = (int*)malloc(sizeof(int)* ROW * COL);
     
     //TODO DEFINIRE IL PROCESSO CENTRALE
-    int centerProcess = numProcs/2 + 1;  
+    int centerProcess = 3;  
     
     int* localMatrix = (int*) malloc (sizeof(int)* localRow * localCol);
     MPI_Comm greed;
@@ -67,7 +68,7 @@ int main(int argc, char** argv)
             world [i] = 0;
 
 //DISPLAY ALLEGRO
-/*
+
         ALLEGRO_DISPLAY *display = NULL;
 
    if(!al_init()) {
@@ -75,18 +76,14 @@ int main(int argc, char** argv)
       return -1;
    }
 
-   display = al_create_display(640, 480);
+   display = al_create_display(640, 640);
    if(!display) {
       fprintf(stderr, "failed to create display!\n");
       return -1;
    }
 
-   al_clear_to_color(al_map_rgb(0,0,0));
-   
-   al_flip_display();
+       al_clear_to_color(al_map_rgb(0,0,0));
     
-    
-    */
     }    
     for (int i = 0; i <localRow * localCol; i++)
     {
@@ -124,20 +121,21 @@ int main(int argc, char** argv)
     //send the submatrices to the processes
     MPI_Scatterv(world, counts, disps, matrixTransposed, localMatrix, localRow * localCol, MPI_INT, centerProcess, MPI_COMM_WORLD);
 
+    
     //stampa di prova
-    printf("rank %d Local Matrix:\n", rank);
-            for (int i=0; i<localRow; i++) {
-                for (int j=0; j<localCol; j++) {
-                    printf("%d ",(int)localMatrix[i*localCol+j]);
-                }
-                printf("\n");
-            }
-            printf("\n");    
-
-    //needed to synchronized the prints
+//    printf("rank %d Local Matrix:\n", rank);
+//            for (int i=0; i<localRow; i++) {
+//                for (int j=0; j<localCol; j++) {
+//                  al_draw_filled_circle (50.0 , 50.0 , 10.0, al_map_rgb(255.0, 255.0, 255.0));
+//                    printf("%d ",(int)localMatrix[i*localCol+j]);
+//                }
+//                printf("\n");
+//            }
+ //           printf("\n");    
+    //needed to synchronized the decomposition and the send
     MPI_Barrier(greed);
     
-    for(int u = 0; u<40; u  ++){
+    while(1){
       
     //MASTER
     if (rank == centerProcess){
@@ -176,7 +174,7 @@ int main(int argc, char** argv)
 
     
         //LEFT localMatrix [i] <-> inbuf [i+nbrsLeftShift-shiftCoefficient] ; 0-9 ++3; x=6, y=0 ++2
-        for (int i = 0; i< localRow * localCol - localRow; i+=sendSize)
+        for (int i = 0; i<=localRow * localCol - localRow; i+=sendSize)
         {
             localMatrix[i]+= inbuf[i+nbrsLeftShift - shiftCoefficient];        
             shiftCoefficient+= localRow -1 ;
@@ -199,13 +197,26 @@ int main(int argc, char** argv)
                 printOk = 0;
             
     
-         if (printOk == 1){        
-        printf ("giro %d\n", u);
-        for (int i = 0; i< ROW; i++){
-            for (int j = 0; j<COL; j++){
-                    printf ("%d  ", world[i*COL+j]);} printf ("\n");
+         if (printOk == 1){  
+              
+        float c1, c2, c3 = 0.0;
+        for (int i = 0; i<ROW; i++){
+                for (int j = 0; j<COL; j++){
+            if (world[i*COL+j] == 0){ c1 = 255.0; c2 = 229.0; c3 = 204.0;}
+            else if (world[i*COL+j] == 1){c1 = 204.0; c2 = 102.0; c3 = 0.0;}
+            else if (world[i*COL+j] == 2){c1 = 153.0; c2 = 76.0; c3 = 0.0;}
+            else if (world[i*COL+j] == 3){c1 = 102.0; c2= 51.0; c3 = 0.0;}
+            al_draw_filled_circle (i * 10.0 + 20  , j * 10.0  + 10.0 , 5.0, al_map_rgb(c1, c2, c3));
+                   
+            }
         }
-        printf ("\n");
+        al_flip_display();/* 
+        for (int i = 0; i< ROW; i++){
+            for (int j = 0; j<COL; j++){ 
+                    printf ("%d  ", world[i*COL+j]);
+            } printf ("\n");
+          }
+        printf ("\n");*/
        }
 
 }
@@ -243,7 +254,7 @@ int main(int argc, char** argv)
 
     
         //LEFT localMatrix [i] <-> inbuf [i+nbrsLeftShift-shiftCoefficient] ; 0-9 ++3; x=6, y=0 ++2
-        for (int i = 0; i< localRow * localCol - localRow; i+=sendSize)
+        for (int i = 0; i<= localRow * localCol - localRow; i+=sendSize)
         {
             localMatrix[i]+= inbuf[i+nbrsLeftShift - shiftCoefficient];        
             shiftCoefficient+= localRow -1 ;
