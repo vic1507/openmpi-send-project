@@ -26,19 +26,19 @@ int main(int argc, char** argv)
     MPI_Init(&argc, &argv);
     int numProcs;
     MPI_Comm_size (MPI_COMM_WORLD, &numProcs);
-    int localRow = 27;
-    int localCol = 27;
+    int localRow = 27;//sqrt(COL * ROW / numProcs); //TODO DEVE FARLO IN AUTOMATICO
+    int localCol = 27; //sqrt(COL * ROW / numProcs); //TODO DEVE FARLO IN AUTOMATICO
     int dimension = sqrt (COL * ROW / (localRow * localCol)); 
     int localSum = 0;    
-    int nbrsSize  = localRow;
-    int rank, dims[2] = {dimension, dimension}, nbrs[4], periods  [2] = {0, 0}, reorder = 0;
-    int* inbuf = (int*)malloc(sizeof(int)* nbrsSize*4);
-    int* outbuf = (int*)malloc(sizeof(int)* nbrsSize*4);
-    int* sendToMaster = (int*)malloc(sizeof(int)* (localRow*localCol+1));
+    //TODO IL DIMS DEVE FARLO IN AUTOMATICO
+    int rank, dims[2] = {2,2/*dimension, dimension*/}, nbrs[4], periods  [2] = {0, 0}, reorder = 0;
+    int* inbuf = (int*)malloc(sizeof(int)* (localRow * 2 + localCol *2));
+    int* outbuf = (int*)malloc(sizeof(int)* (localRow * 2 + localCol *2));
+    int* sendToMaster = (int*)malloc(sizeof(int)* (localRow*localCol));
     int* world = (int*)malloc(sizeof(int)* ROW * COL);
     
     //TODO DEFINIRE IL PROCESSO CENTRALE
-    int centerProcess = 3;  
+    int centerProcess = 3;//numProcs % 2 == 0 ? numProcs / 2 +1 : numProcs / 2;  
     
     int* localMatrix = (int*) malloc (sizeof(int)* localRow * localCol);
     MPI_Comm greed;
@@ -48,7 +48,7 @@ int main(int argc, char** argv)
     MPI_Cart_shift(greed, 1, 1, &nbrs[LEFT], &nbrs[RIGHT]);
         
     //TODO DEFINIRE LA CELLA CENTRALE    
-    int centerCell = 0;
+    int centerCell = 0;//numProcs % 2 == 0 ? 0 : localRow * localCol / 2;
 
     int decompositionRow = ROW/localRow;
     int decompositionCol = COL/localCol;
@@ -58,7 +58,7 @@ int main(int argc, char** argv)
 
     //needed for the corrispondence between inbuf and localMatrices    
     int nbrsRightShift = localRow + localCol + 1;
-    int nbrsLeftShift = localRow + localCol;
+    int nbrsLeftShift = localCol * 2;
     int shiftCoefficient = 0; 
     
     //define master and initialize matrices (center or another external process)
@@ -83,7 +83,6 @@ int main(int argc, char** argv)
    }
 
        al_clear_to_color(al_map_rgb(0,0,0));
-    
     }    
     for (int i = 0; i <localRow * localCol; i++)
     {
@@ -107,7 +106,7 @@ int main(int argc, char** argv)
 
     MPI_Type_commit(&matrixTransposed);
     //MPI_Type_commit(&vector);
-
+    
     int disps[decompositionRow*decompositionCol];
     int counts[decompositionRow*decompositionCol];
     
@@ -122,20 +121,20 @@ int main(int argc, char** argv)
     MPI_Scatterv(world, counts, disps, matrixTransposed, localMatrix, localRow * localCol, MPI_INT, centerProcess, MPI_COMM_WORLD);
 
     
-    //stampa di prova
-//    printf("rank %d Local Matrix:\n", rank);
-//            for (int i=0; i<localRow; i++) {
-//                for (int j=0; j<localCol; j++) {
+    //stampa di prova//
+   // printf("rank %d Local Matrix:\n", rank);
+   //         for (int i=0; i<localRow; i++) {
+   //             for (int j=0; j<localCol; j++) {
 //                  al_draw_filled_circle (50.0 , 50.0 , 10.0, al_map_rgb(255.0, 255.0, 255.0));
-//                    printf("%d ",(int)localMatrix[i*localCol+j]);
-//                }
-//                printf("\n");
-//            }
- //           printf("\n");    
+    //                printf("%d ",(int)localMatrix[i*localCol+j]);
+    //            }
+      //          printf("\n");
+        //    }
+        //   printf("\n");    
     //needed to synchronized the decomposition and the send
     MPI_Barrier(greed);
     
-    while(1){
+    while (1){
       
     //MASTER
     if (rank == centerProcess){
@@ -147,49 +146,88 @@ int main(int argc, char** argv)
             if (localMatrix[i] > 3)
                 update(i, localMatrix, 1, 1, outbuf, localCol, localRow, 0);        
 
+         int waitArray[4] = {0,0,0,0};
+
         //send my state to nbrs
-        for (int i = 0; i<sendSize*4; i+=sendSize)
-            MPI_Isend(&outbuf[i], sendSize, MPI_INT, nbrs[((i+sendSize) /sendSize)-1],1, greed, &reqs[((i+sendSize) /sendSize)-1]);
-        
-        for (int i = 0; i<sendSize*4;i++)
+        if (localRow != localCol)
+        {
+            for (int i = 0; i< localCol * 2; i+= localCol){
+                if (nbrs[((i+localCol) /localCol)-1] >= 0 && nbrs[((i+localCol) /localCol)-1]<numProcs){
+                waitArray[((i+localCol) /localCol)-1] = 1;
+                 MPI_Isend(&outbuf[i], localCol, MPI_INT, nbrs[((i+localCol) /localCol)-1],1, greed, &reqs[((i+localCol) /localCol)-1]);
+                }
+            }
+           for (int i = localCol * 2; i < localRow * 2 + localCol * 2; i+=localRow){
+            if (nbrs[(i - localCol * 2 + localRow) / localRow + 1] >= 0 && nbrs[(i - localCol * 2 + localRow) / localRow + 1]<numProcs){
+                waitArray[(i - localCol * 2 + localRow) / localRow + 1] = 1;
+                 MPI_Isend(&outbuf[i], localRow, MPI_INT, nbrs[(i - localCol * 2 + localRow) / localRow + 1],1, greed, &reqs[(i - localCol * 2 + localRow) / localRow + 1]); }
+                }          
+            }
+        else
+            for (int i = 0; i<localRow * 2 + localCol *2; i+=localRow){   
+                 MPI_Isend(&outbuf[i], localRow, MPI_INT, nbrs[((i+localRow) /localRow)-1],1, greed, &reqs[((i+localRow) /localRow)-1]);
+                 waitArray[((i+localRow) /localRow)-1] = 1;                
+              }
+
+
+        for (int i = 0; i<localCol * 2 + localRow * 2;i++)
             outbuf[i] = 0;
 
-        // //receive nbrs states 
-        for (int i = 0; i<sendSize*4;i+=sendSize)
-            MPI_Recv(&inbuf[i], sendSize, MPI_INT, nbrs[((i+sendSize) /sendSize)-1], 1, greed, &status);
+    
+        // //receive nbrs states
+        if(localRow != localCol){
+            for (int i = 0; i< localCol *2 ; i+= localCol){
+            if (nbrs[((i+localCol) /localCol)-1] >= 0 && nbrs[((i+localCol) /localCol)-1]<numProcs)
+             MPI_Recv(&inbuf[i], localCol, MPI_INT, nbrs[((i+localCol) /localCol)-1], 1, greed, &status);
+            }
+            for (int i = localCol*2; i<localRow * 2 +  localCol*2; i+=localRow){
+                if (nbrs[(i - localCol * 2 + localRow) / localRow + 1] >= 0 && nbrs[(i - localCol * 2 + localRow) / localRow + 1]<numProcs)
+                     MPI_Recv(&inbuf[i], localRow, MPI_INT, nbrs[(i - localCol * 2 + localRow) / localRow + 1], 1, greed, &status);      }
+        }
+        else 
+            for (int i = 0; i<localRow * 2 + localCol *2;i+=localRow)
+                MPI_Recv(&inbuf[i], localRow, MPI_INT, nbrs[((i+localRow) /localRow)-1], 1, greed, &status);
 
     
-        for (int i = 0; i<4; i++)
-            MPI_Wait (&reqs[i], &status);
+    for (int i = 0; i<4; i++){if (waitArray[i] ==1)
+            MPI_Wait (&reqs[i], &status);}
 
         //prepare next iteration and send 
         //corrispondenze:
+        
         //UP localMatrix [i] <-> inbuf [i] ; 0-3  ++1        
-        for (int i = 0; i<sendSize; i++) 
+        for (int i = 0; i<localCol; i++) 
             localMatrix[i]+=inbuf[i];
         
         //DOWN localMatrix [i] <-> inbuf [i-3] ; 6-9  ++1
-        for (int i = sendSize*(localRow-1); i< sendSize*localRow; i++)
-            localMatrix[i]+=inbuf[i-sendSize * (-2 + localRow)];
-
+        for (int i = localCol*(localRow-1); i< localCol*localRow; i++){
+        if(i- localCol* (localRow - 2) <0)
+            printf("sono la stella\n");
+                  localMatrix[i]+=inbuf[i- localCol* (localRow - 2)];
+}
     
         //LEFT localMatrix [i] <-> inbuf [i+nbrsLeftShift-shiftCoefficient] ; 0-9 ++3; x=6, y=0 ++2
-        for (int i = 0; i<=localRow * localCol - localRow; i+=sendSize)
+        for (int i = 0; i<= localRow * localCol - localCol; i+=localCol)
         {
             localMatrix[i]+= inbuf[i+nbrsLeftShift - shiftCoefficient];        
-            shiftCoefficient+= localRow -1 ;
+            shiftCoefficient+= localCol -1 ;
+            if (i+nbrsLeftShift - shiftCoefficient <0)
+                printf("mi chiamo virgola\n");
         }
         
         shiftCoefficient = 0;
              
         //RIGHT localMatrix [i] <-> inbuf [i+nbrsRightShift-shiftCoefficient] ; 2-9 ++3; x=7, y=0 ++2
-        for (int i = localRow-1; i<localRow * localCol; i+=sendSize)
+        for (int i = localCol-1; i<localRow * localCol; i+=localCol)
         {
-            localMatrix[i]+= inbuf[i+nbrsRightShift - shiftCoefficient];
-            shiftCoefficient+= localRow - 1;        
-        }
 
-        shiftCoefficient = 0;
+            if (i+nbrsRightShift - shiftCoefficient <0)
+                printf("sono un gattino\n");
+            localMatrix[i]+= inbuf[i+nbrsRightShift - shiftCoefficient];
+            shiftCoefficient+=localCol - 1;        
+        }        
+
+          shiftCoefficient = 0;
         
         int printOk = 1;
         for (int i = 0; i<ROW*COL; i++)
@@ -198,15 +236,14 @@ int main(int argc, char** argv)
             
     
          if (printOk == 1){  
-              
         float c1, c2, c3 = 0.0;
         for (int i = 0; i<ROW; i++){
                 for (int j = 0; j<COL; j++){
-            if (world[i*COL+j] == 0){ c1 = 255.0; c2 = 229.0; c3 = 204.0;}
+            if (world[i*COL+j] == 0){ c1 = 255.0; c2 = 229.0; c3 = 204.0;  c1 = 0.0; c2 = 0.0; c3 = 0.0;}
             else if (world[i*COL+j] == 1){c1 = 204.0; c2 = 102.0; c3 = 0.0;}
             else if (world[i*COL+j] == 2){c1 = 153.0; c2 = 76.0; c3 = 0.0;}
             else if (world[i*COL+j] == 3){c1 = 102.0; c2= 51.0; c3 = 0.0;}
-            al_draw_filled_circle (i * 10.0 + 20  , j * 10.0  + 10.0 , 5.0, al_map_rgb(c1, c2, c3));
+            al_draw_filled_circle (j * 10.0 + 20  , i * 10.0  + 10.0 , 5.0, al_map_rgb(c1, c2, c3));
                    
             }
         }
@@ -223,56 +260,86 @@ int main(int argc, char** argv)
 
     //local operations 
     if (rank != centerProcess){
-    
        // localMatrix[4]++;
         //update recursive function
           for (int i = 0; i<localRow * localCol; i++) 
             if (localMatrix[i] > 3)
                 update(i, localMatrix, 1, 1, outbuf, localCol, localRow, 0);        
 
-        //send my state to nbrs
-        for (int i = 0; i<sendSize*4; i+=sendSize)
-            MPI_Isend(&outbuf[i], sendSize, MPI_INT, nbrs[((i+sendSize) /sendSize)-1],1, greed, &reqs[((i+sendSize) /sendSize)-1]);
-        
-        for (int i = 0; i<sendSize*4;i++)
-            outbuf[i] = 0;
-        //receive
-        for (int i = 0; i<sendSize*4;i+=sendSize)
-            MPI_Recv(&inbuf[i],sendSize, MPI_INT, nbrs[((i+sendSize) /sendSize)-1], 1, greed, &status);
-        
-        for (int i = 0; i<4; i++)
-            MPI_Wait (&reqs[i], &status);
-        //corrispondenze:
+          int waitArray[4] = {0,0,0,0};
 
-                //UP localMatrix [i] <-> inbuf [i] ; 0-3  ++1        
-        for (int i = 0; i<sendSize; i++) 
+
+      //send my state to nbrs
+        if (localRow != localCol)
+        {
+            for (int i = 0; i< localCol * 2; i+=localCol){
+                if (nbrs[((i+localCol) /localCol)-1] >= 0 && nbrs[((i+localCol) /localCol)-1] < numProcs){
+                 MPI_Isend(&outbuf[i], localCol, MPI_INT, nbrs[((i+localCol) /localCol)-1],1, greed, &reqs[((i+localCol) /localCol)-1]);
+                waitArray[((i+localCol) /localCol)-1] = 1;
+                }
+            }
+            for (int i = localCol * 2; i < localRow * 2 + localCol * 2; i+=localRow){
+            if (nbrs[(i - localCol * 2 + localRow) / localRow + 1] >= 0 && nbrs[(i - localCol * 2 + localRow) / localRow + 1]<numProcs){
+                waitArray[((i+localCol) /localCol)-1] = 1;
+                 MPI_Isend(&outbuf[i], localRow, MPI_INT, nbrs[(i - localCol * 2 + localRow) / localRow + 1],1, greed, &reqs[(i - localCol * 2 + localRow) / localRow + 1]); }}          
+            }
+        else
+            for (int i = 0; i<localRow * 2 + localCol *2; i+=localRow){
+                MPI_Isend(&outbuf[i], localRow, MPI_INT, nbrs[((i+localRow) /localRow)-1],1, greed, &reqs[((i+localRow) /localRow)-1]);
+                   waitArray[((i+localRow) /localRow)-1] = 1;        
+        }
+        
+        for (int i = 0; i<localRow*2 + localCol *2 ;i++)
+            outbuf[i] = 0;
+        
+        //receive
+        if(localRow != localCol){
+            for (int i = 0; i< localCol *2 ; i+= localCol){
+                if (nbrs[((i+localCol) /localCol)-1] >= 0 && nbrs[((i+localCol) /localCol)-1]<numProcs)
+                    MPI_Recv(&inbuf[i], localCol, MPI_INT, nbrs[((i+localCol) /localCol)-1], 1, greed, &status);
+                }
+            for (int i = localCol*2; i<localRow * 2 +  localCol*2; i+=localRow){
+                if (nbrs[(i - localCol * 2 + localRow) / localRow + 1] >= 0 && nbrs[(i - localCol * 2 + localRow) / localRow + 1]<numProcs){
+                    MPI_Recv(&inbuf[i], localRow, MPI_INT, nbrs[(i - localCol * 2 + localRow) / localRow + 1], 1, greed, &status);}
+           }        
+        }
+        else 
+            for (int i = 0; i<localRow * 2 + localCol *2;i+=localRow)
+                MPI_Recv(&inbuf[i], localRow, MPI_INT, nbrs[((i+localRow) /localRow)-1], 1, greed, &status);
+        
+        for (int i = 0; i<4; i++){
+          if (waitArray[i] ==1)
+                MPI_Wait (&reqs[i], &status);
+        }
+
+        //corrispondenze:
+        //UP localMatrix [i] <-> inbuf [i] ; 0-3  ++1        
+        for (int i = 0; i<localCol; i++) 
             localMatrix[i]+=inbuf[i];
         
         //DOWN localMatrix [i] <-> inbuf [i-3] ; 6-9  ++1
-        for (int i = sendSize*(localRow-1); i< sendSize*localRow; i++)
-            localMatrix[i]+=inbuf[i-sendSize * (-2 + localRow)];
+        for (int i = localCol*(localRow-1); i< localCol*localRow; i++)
+            localMatrix[i]+=inbuf[i- localCol* (localRow - 2)];
 
     
         //LEFT localMatrix [i] <-> inbuf [i+nbrsLeftShift-shiftCoefficient] ; 0-9 ++3; x=6, y=0 ++2
-        for (int i = 0; i<= localRow * localCol - localRow; i+=sendSize)
+        for (int i = 0; i<= localRow * localCol - localCol; i+=localCol)
         {
             localMatrix[i]+= inbuf[i+nbrsLeftShift - shiftCoefficient];        
-            shiftCoefficient+= localRow -1 ;
+            shiftCoefficient+= localCol -1 ;
         }
         
         shiftCoefficient = 0;
              
         //RIGHT localMatrix [i] <-> inbuf [i+nbrsRightShift-shiftCoefficient] ; 2-9 ++3; x=7, y=0 ++2
-        for (int i = localRow-1; i<localRow * localCol; i+=sendSize)
+        for (int i = localCol-1; i<localRow * localCol; i+=localCol)
         {
+
             localMatrix[i]+= inbuf[i+nbrsRightShift - shiftCoefficient];
-            shiftCoefficient+=localRow - 1;        
+            shiftCoefficient+=localCol - 1;        
         }        
 
           shiftCoefficient = 0;
-
-        //prepareNextSend
-
     
         }
 
@@ -286,64 +353,60 @@ int main(int argc, char** argv)
 }
 
 
-
 void update (int cell, int* localMatrix, int updateNum, int center, int* outbuf, int sizeCol, int sizeRow, int lap)
 {
     
+    
+
     if (localMatrix[cell] <3)
         localMatrix[cell] += updateNum;
 
     else
     {
+
         int sendLeft = 0;
         int sendRight = 0;
         int sendUp = 0;
         int sendDown = 0;
         localMatrix[cell] = 0;
-
-               int start = sizeRow-1;
+        
+        int start = sizeCol-1;
         int stride = 1;
         while (start <= sizeRow*sizeCol-1){
            if (cell == start){
                     sendLeft = 1;
-                break;}
+                break;
+            }
             start+=sizeCol;     
             stride++;        
         }   
         
-        if (cell >= 0 && cell < sizeRow || (cell % sizeCol == 0 && cell < sizeCol * sizeRow - sizeRow && cell > 0) || (sendLeft == 1 && cell > sizeRow-1 && cell<sizeRow*sizeCol-1))
+        //DOWN IN LOCAL, UP IN GENERAL   IT'S OK!
+                //pirma riga                   //prima colonna tranne prima e ultima cella                                ultima colonna tranne prima e ultima cella
+        if (cell >= 0 && cell < sizeCol || (cell % sizeCol == 0 && cell < sizeCol * sizeRow - sizeCol && cell > 0) || (sendLeft == 1 && cell > sizeCol-1 && cell<sizeRow*sizeCol-1))
         {
-            if (lap == 15 || lap == 16)
-            {
-                printf ("stampo al giro %d la cella %d per DOWN\n", lap, cell);            
-            }
             sendDown = 1;   
-            if (cell >= 0 && cell < sizeRow )
+            if (cell >= 0 && cell < sizeCol )
                 outbuf[cell]+=1;         
             update (cell+sizeCol, localMatrix, 1, 0, outbuf, sizeCol, sizeRow, lap);
         }        
 
-        if (cell < sizeRow * sizeCol && cell>= sizeRow*sizeCol-sizeRow || (cell % sizeCol == 0 && cell < sizeCol * sizeRow - sizeRow && cell > 0) || (sendLeft == 1 && cell > sizeRow-1 && cell<sizeRow*sizeCol-1) )
+        //UP IN LOCAL, DOWN IN GENERAL  IT'S OK!
+        if (cell < sizeRow * sizeCol && cell>= sizeRow*sizeCol-sizeCol || (cell % sizeCol == 0 && cell < sizeCol * sizeRow - sizeCol && cell > 0) || (sendLeft == 1 && cell > sizeCol-1 && cell<sizeRow*sizeCol-1) )
         {
 
-            if (lap == 15 || lap == 16)
-            {
-                printf ("stampo al giro %d la cella %d per UP\n", lap, cell);            
-            }
             sendUp = 1;
-            if (cell < sizeRow * sizeCol && cell>= sizeRow*sizeCol-sizeRow)
-             outbuf[cell-  (sizeRow * (sizeRow -2)) ]+=1; 
+            if (cell < sizeRow * sizeCol && cell>= sizeRow*sizeCol-sizeCol)
+                outbuf[cell-  (sizeCol * (sizeRow -2)) ]+=1; 
+            
             update (cell-sizeCol, localMatrix, 1, 0, outbuf, sizeCol, sizeRow, lap);
         }
 
-        if (cell % sizeCol == 0 || (cell > 0 && cell< sizeRow-1) || (cell<sizeRow*sizeCol-1 && cell> sizeRow*sizeCol-sizeRow))
+        //RIGHT IN LOCAL, LEFT IN GENERAL IT'S OK!    
+        if (cell % sizeCol == 0 || (cell > 0 && cell< sizeCol-1) || (cell<sizeRow*sizeCol-1 && cell> sizeRow*sizeCol-sizeCol))
         {
-            if (cell%sizeCol == 0)
-                outbuf[sizeRow*2 + (cell/sizeCol)]+=1;
-
-            if (lap == 15 || lap == 16)
-            {
-                printf ("stampo al giro %d la cella %d per RIGHT\n", lap, cell);            
+            if (cell%sizeCol == 0){
+                outbuf[sizeCol*2 + (cell/sizeCol)]+=1;
             }
             update (cell+1, localMatrix, 1, 0, outbuf, sizeCol, sizeRow, lap);
             
@@ -352,27 +415,17 @@ void update (int cell, int* localMatrix, int updateNum, int center, int* outbuf,
         }
 
 
-        if (sendLeft == 1 || (cell <sizeRow * sizeCol -1 && cell > sizeRow * sizeCol - sizeRow) || (cell>0 && cell<sizeRow-1)){
+    //SINISTRA LOCALE, DESTRA GENERALE IT'S OK!!!
+        if (sendLeft == 1 || (cell <sizeRow * sizeCol -1 && cell > sizeRow * sizeCol - sizeCol) || (cell>0 && cell<sizeCol-1)){
             //sendLeft
             if (sendLeft == 1)
-                outbuf[sizeRow * 3 + cell - stride * (sizeRow-1)]+=1;
-           
-
-            if (lap == 15 || lap == 16)
-            {
-                printf ("stampo al giro %d la cella %d per LEFT\n", lap, cell);            
-            }
+                outbuf[sizeCol * 2 + sizeRow + cell - stride * (sizeCol-1)]+=1;
             update (cell-1, localMatrix, 1, 0, outbuf, sizeCol, sizeRow, lap);
-            sendLeft = 1;        
         }
 
         if (sendLeft + sendRight + sendUp + sendDown == 0){
 
-            if (lap == 15 || lap == 16)
-            {
-                printf ("stampo al giro %d la cella %d per TUTTO\n", lap, cell);            
-            }
-            //send everywhere
+              //send everywhere
             update (cell-1, localMatrix, 1, 0, outbuf, sizeCol, sizeRow, lap);
             update (cell+1, localMatrix, 1, 0, outbuf, sizeCol, sizeRow, lap);
             update (cell+sizeCol, localMatrix, 1, 0, outbuf, sizeCol, sizeRow, lap);
